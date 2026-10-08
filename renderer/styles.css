@@ -1,6 +1,7 @@
 /* MultiClaude
-   A quiet, system-native utility. The only saturated color on screen is each
-   profile's own color, so that is what tells your accounts apart. */
+   A quiet, system-native utility. Each profile's own color tells your accounts
+   apart; status dots use fixed macOS system colors so they read the same on
+   every tile. */
 
 :root {
   --canvas: #eef0f3;
@@ -14,6 +15,10 @@
   --focus: #2457f5;
   --danger: #b3261e;
   --danger-bg: #fbe9e7;
+  --status-ok: #34c759;
+  --status-busy: #ffcc00;
+  --status-error: #ff3b30;
+  --status-off: #8e8e93;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   color-scheme: light dark;
 }
@@ -31,6 +36,10 @@
     --focus: #7fa0ff;
     --danger: #ff8a80;
     --danger-bg: #3a2220;
+    --status-ok: #30d158;
+    --status-busy: #ffd60a;
+    --status-error: #ff453a;
+    --status-off: #98989d;
   }
 }
 
@@ -201,14 +210,19 @@ footer .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; u
   font-size: 12px;
   color: var(--muted);
 }
-.status[data-running="true"] { color: var(--ink); }
-.status[data-running="true"]::before {
+.status[data-status]::before {
   content: "";
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--c);
+  background: var(--status-off);
 }
+.status[data-status="running"],
+.status[data-status="starting"] { color: var(--ink); }
+.status[data-status="error"] { color: var(--danger); }
+.status[data-status="running"]::before { background: var(--status-ok); }
+.status[data-status="starting"]::before { background: var(--status-busy); }
+.status[data-status="error"]::before { background: var(--status-error); }
 
 .more {
   position: absolute;

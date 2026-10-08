@@ -133,18 +133,55 @@ function addTile() {
   );
 }
 
+// ------------------------------------------------------------------ status
+
+// How long a launch may take before "Starting…" turns into "Didn't start".
+const START_TIMEOUT_MS = 20000;
+
+// Renderer-only states layered over the main process's running flag, by profile id:
+// { kind: 'starting', since } after a launch, or { kind: 'error', label } when one fails.
+const transient = new Map();
+
+// The status shown on a tile: { kind: 'running' | 'starting' | 'error' | 'off', label }.
+function statusOf(p) {
+  if (p.running) {
+    transient.delete(p.id);
+    return { kind: 'running', label: 'Running' };
+  }
+  if (!state.appFound) return { kind: 'error', label: 'Claude not found' };
+  const t = transient.get(p.id);
+  if (t && t.kind === 'starting') {
+    if (Date.now() - t.since < START_TIMEOUT_MS) return { kind: 'starting', label: 'Starting…' };
+    transient.set(p.id, { kind: 'error', label: 'Didn’t start' });
+  }
+  return transient.get(p.id) || { kind: 'off', label: 'Not running' };
+}
+
 function patchStatus() {
   for (const p of state.profiles) {
     const li = $(`.tile[data-id="${CSS.escape(p.id)}"]`);
     if (!li) continue;
     const status = $('[data-role="status"]', li);
-    status.dataset.running = String(p.running);
-    status.textContent = p.running ? 'Running' : 'Not running';
+    const { kind, label } = statusOf(p);
+    status.dataset.status = kind;
+    status.textContent = label;
   }
 }
 
+// Show "Starting…" on a profile that isn't running yet; returns the launch result.
+async function launchWithStatus(id) {
+  const p = state.profiles.find((x) => x.id === id);
+  if (p && !p.running) transient.set(id, { kind: 'starting', since: Date.now() });
+  patchStatus();
+  const r = await api.launch(id);
+  if (!r.ok) transient.set(id, { kind: 'error', label: 'Couldn’t open' });
+  patchStatus();
+  return r;
+}
+
 async function launchProfile(p) {
-  const r = await api.launch(p.id);
+  // A running profile is just brought forward, so it stays "Running".
+  const r = await launchWithStatus(p.id);
   if (!r.ok) return toast(r.error || 'Could not open Claude.', true);
   toast(`Opening ${p.name}…`);
   setTimeout(refresh, 1500);
@@ -401,7 +438,7 @@ async function quitOthers(force) {
 async function openTarget() {
   wizard.busy = true;
   renderWizard();
-  const r = await api.launch(wizard.profile.id);
+  const r = await launchWithStatus(wizard.profile.id);
   wizard.busy = false;
   if (!r.ok) {
     showError('#wizardError', r.error);
@@ -416,7 +453,7 @@ async function reopenClosed() {
   wizard.busy = true;
   renderWizard();
   for (const id of wizard.quitIds) {
-    await api.launch(id);
+    await launchWithStatus(id);
     await sleep(800);
   }
   wizard.quitIds = [];
