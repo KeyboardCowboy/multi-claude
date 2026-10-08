@@ -83,7 +83,17 @@ What that means when you sign out of one account and into another in a single in
 - **Shared:** local MCP servers, installed extensions, window state, and preferences. Every account sees the same set.
 - **Not here at all:** chats and projects live on Anthropic's servers, per account. Claude Code's `~/.claude` folder is shared by all accounts.
 
-MultiClaude gives each profile its own complete copy of this folder, so each one has its own sign-in, MCP servers, and extensions, and they can all run at the same time. `~/.claude` is the one piece still shared (see below).
+MultiClaude gives each profile its own copy of this folder, so each one has its own sign-in, MCP servers, and extensions, and they can all run at the same time. `~/.claude` is still shared by all of them (see below).
+
+### Session history is shared with Claude's usual folder
+
+The per-account parts (the four folders filed by `<account-id>` above) are not copied. Each time a profile opens, MultiClaude links its account's folders into Claude's usual folder, so an account's local Claude Code and Cowork sessions, scheduled tasks, and memory live in one place whether you open it through MultiClaude or sign into it in Claude Desktop the normal way. If you stop using MultiClaude, nothing is lost.
+
+- Only the profile's own account folder is linked. Folders filed by organization (like `local-agent-mode-sessions/skills-plugin`) stay in the profile, since other accounts in the same organization share them.
+- The first time a profile is linked, anything it had that Claude's usual folder lacks is moved there. If both have the same file, the usual folder's copy is kept and the profile's is moved to `~/Library/Application Support/MultiClaude/Backups/`. Nothing is deleted.
+- If the account already has scheduled tasks in Claude's usual folder, MultiClaude asks before the first link, because those tasks will start running in that profile.
+- Linking happens only while neither the profile nor another instance signed into the same account is running, and MultiClaude never opens one account twice, so two instances never write the same account's history.
+- If Claude ever replaces a link with a plain folder, the next launch merges it back.
 
 ## Known limits
 

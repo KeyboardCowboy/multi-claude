@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('multiclaude', {
   getIcon: () => call('icon:get'),
   saveProfile: (profile) => call('profile:save', profile),
   removeProfile: (id, trashData) => call('profile:remove', id, trashData),
-  launch: (id) => call('profile:launch', id),
+  launch: (id, opts) => call('profile:launch', id, opts),
   othersRunning: (id) => call('signin:others', id),
   quitOthers: (id, force) => call('signin:quit-others', id, force),
   chooseClaudeApp: () => call('app:choose'),

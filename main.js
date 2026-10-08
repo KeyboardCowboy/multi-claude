@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const { normalizeDir, dirKey, uniqueProfileDir, parseInstances } = require('./lib/instances');
 const { accountIdFromConfig, bindNewAccounts, accountStates, normalizeEmail } = require('./lib/accounts');
+const { needsLinking, scheduledTaskCount, linkAccountFolders } = require('./lib/sharing');
 
 app.setName('MultiClaude');
 
@@ -18,6 +19,8 @@ const CLAUDE_CODE_DIR = path.join(os.homedir(), '.claude');
 // Where new profiles get their data folders automatically. Older profiles may live elsewhere
 // (e.g. ~/.claude-instances); their saved paths are kept as they are.
 const PROFILES_ROOT = path.join(app.getPath('userData'), 'Profiles');
+// Anything moved aside while sharing a profile's session history (see lib/sharing.js).
+const BACKUPS_ROOT = path.join(app.getPath('userData'), 'Backups');
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -303,7 +306,33 @@ ipcMain.handle('profile:remove', async (_e, id, trashData) => {
   return { ok: true };
 });
 
-ipcMain.handle('profile:launch', async (_e, id) => {
+// Before a profile opens, link its account's session folders into Claude's usual folder, so
+// the account's history is the same whichever way it's opened. Returns { confirm } when the
+// first link would bring scheduled tasks along (they start running in this profile), unless
+// the user already agreed; { error } if linking failed; otherwise {}.
+function shareSessionHistory(p, account, running, confirmed) {
+  if (!p.dir || running || account.kind !== 'ok' || !account.current || account.sharedWith.length) return {};
+  const where = { profileDir: p.dir, hubDir: CLAUDE_DEFAULT_DATA, accountId: account.current };
+  if (!needsLinking(where)) return {};
+  const tasks = scheduledTaskCount(CLAUDE_DEFAULT_DATA, account.current);
+  const ownTasks = scheduledTaskCount(p.dir, account.current);
+  if (!confirmed && tasks > 0) {
+    const who = accountEmail(account.current) || 'This account';
+    let message = `${who} was also used in Claude Desktop’s usual folder, which has ${tasks} scheduled ${tasks === 1 ? 'task' : 'tasks'} for it. ${p.name} will now share that session history, so ${tasks === 1 ? 'that task' : 'those tasks'} will start running in ${p.name}.`;
+    if (ownTasks > 0) message += ` ${p.name}’s own ${ownTasks} scheduled ${ownTasks === 1 ? 'task is' : 'tasks are'} replaced by those; a backup is kept.`;
+    return { confirm: { title: 'Share session history?', message, action: `Share and open ${p.name}` } };
+  }
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    linkAccountFolders({ ...where, backupDir: path.join(BACKUPS_ROOT, `${path.basename(p.dir)}-${stamp}`) });
+    return {};
+  } catch (e) {
+    return { error: `Couldn’t share ${p.name}’s session history with Claude’s usual folder: ${e.message}` };
+  }
+}
+
+// opts.confirmSharing: the user agreed to the first-link prompt from shareSessionHistory.
+ipcMain.handle('profile:launch', async (_e, id, opts = {}) => {
   const p = findProfile(id);
   if (!p) return { ok: false, error: 'Profile not found.' };
   if (!appFound()) {
@@ -313,9 +342,10 @@ ipcMain.handle('profile:launch', async (_e, id) => {
   // sessions and running its scheduled tasks twice, so refuse while the other is open.
   const accounts = await refreshAccounts();
   const { current, sharedWith } = accounts.get(p.id);
+  const runningKeys = new Set((await scanInstances()).map((i) => i.key));
+  const running = runningKeys.has(dirKey(p.dir));
   if (current && sharedWith.length) {
-    const runningKeys = new Set((await scanInstances()).map((i) => i.key));
-    if (!runningKeys.has(dirKey(p.dir))) {
+    if (!running) {
       const open = state.profiles.find((o) => sharedWith.includes(o.id) && runningKeys.has(dirKey(o.dir)));
       if (open) {
         const who = accountEmail(current) || 'The same Claude account';
@@ -323,6 +353,9 @@ ipcMain.handle('profile:launch', async (_e, id) => {
       }
     }
   }
+  const shared = shareSessionHistory(p, accounts.get(p.id), running, !!opts.confirmSharing);
+  if (shared.error) return { ok: false, error: shared.error };
+  if (shared.confirm) return { ok: false, confirm: shared.confirm };
   // -n always starts a fresh process. If this profile is already running, Chromium's
   // single-instance lock (keyed on the data folder) hands off to it and exits.
   const args = ['-n', '-a', state.claudeAppPath];

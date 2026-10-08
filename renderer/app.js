@@ -215,6 +215,7 @@ function openAccountCheck(p) {
   const switchLabel = a.kind === 'mismatch' ? `Switch back to ${usual}` : 'Sign in with a different account';
   actions.push(button(switchLabel, () => (close(), openWizard(p, { switchAccount: true })), 'primary'));
 
+  $('#checkTitle').textContent = 'Check account';
   $('#checkBody').replaceChildren(...paras.map((t) => el('p', { text: t })));
   $('#checkActions').replaceChildren(...actions);
   showError('#checkError', '');
@@ -261,15 +262,41 @@ async function launchWithStatus(id) {
   const p = state.profiles.find((x) => x.id === id);
   if (p && !p.running) transient.set(id, { kind: 'starting', since: Date.now() });
   patchStatus();
-  const r = await api.launch(id);
+  let r = await api.launch(id);
+  // The first time a profile shares session history that includes scheduled tasks, ask first.
+  if (r.confirm) {
+    if (await confirmDialog(r.confirm)) r = await api.launch(id, { confirmSharing: true });
+    else {
+      transient.delete(id);
+      patchStatus();
+      return { ok: false, cancelled: true };
+    }
+  }
   if (!r.ok) transient.set(id, { kind: 'error', label: 'Couldn’t open' });
   patchStatus();
   return r;
 }
 
+// A yes/no question in the Check account dialog's frame. Resolves true for the action button.
+function confirmDialog({ title, message, action }) {
+  return new Promise((resolve) => {
+    const dlg = $('#checkDialog');
+    let answer = false;
+    const button = (text, cls, value) =>
+      el('button', { class: `btn ${cls}`.trim(), type: 'button', text, onClick: () => ((answer = value), dlg.close()) });
+    $('#checkTitle').textContent = title;
+    $('#checkBody').replaceChildren(el('p', { text: message }));
+    $('#checkActions').replaceChildren(button('Cancel', '', false), button(action, 'primary', true));
+    showError('#checkError', '');
+    dlg.addEventListener('close', () => resolve(answer), { once: true });
+    dlg.showModal();
+  });
+}
+
 async function launchProfile(p) {
   // A running profile is just brought forward, so it stays "Running".
   const r = await launchWithStatus(p.id);
+  if (r.cancelled) return;
   if (!r.ok) return toast(r.error || 'Could not open Claude.', true);
   toast(`Opening ${p.name}…`);
   setTimeout(refresh, 1500);
@@ -533,6 +560,7 @@ async function openTarget() {
   renderWizard();
   const r = await launchWithStatus(wizard.profile.id);
   wizard.busy = false;
+  if (r.cancelled) return renderWizard();
   if (!r.ok) {
     showError('#wizardError', r.error);
     return renderWizard();
