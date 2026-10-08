@@ -1,0 +1,49 @@
+name: Release
+
+# release-please keeps a release pull request open that bumps the version and updates
+# CHANGELOG.md from Conventional Commit messages (feat:, fix:, …). Merging that pull request
+# tags the release; the build-app job then attaches the packaged macOS app to it.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-app:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # macos-latest runs on Apple Silicon, matching the arm64 package script.
+    runs-on: macos-latest
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run package
+      - name: Zip and attach the app to the release
+        run: |
+          zip="MultiClaude-${TAG}-macos-arm64.zip"
+          ditto -c -k --keepParent "dist/MultiClaude-darwin-arm64/MultiClaude.app" "$zip"
+          gh release upload "$TAG" "$zip" --clobber

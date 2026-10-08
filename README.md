@@ -14,6 +14,10 @@ npm start
 
 Needs Node 18+ and Claude Desktop at `/Applications/Claude.app` (use **Change…** in the footer if it lives elsewhere).
 
+## Download
+
+Each release on the [Releases page](https://github.com/KeyboardCowboy/multi-claude/releases) has a zipped `MultiClaude.app` for Apple Silicon. It isn't signed by Apple, so the first time you open it, right-click it and choose **Open**.
+
 ## Build a double-clickable app
 
 ```
@@ -108,4 +112,8 @@ The per-account parts (the four folders filed by `<account-id>` above) are not c
 npm test
 ```
 
-Covers the process-list parsing (including folders with spaces and Chromium helper processes).
+Covers the process-list parsing (including folders with spaces and Chromium helper processes), account detection, and session-history linking (run against temporary folders). They also run on GitHub for every push and pull request.
+
+## Contributing
+
+Bugs, ideas, and maintenance tasks are tracked in [GitHub issues](https://github.com/KeyboardCowboy/multi-claude/issues). Commit messages follow [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `docs:`, …): releases, version numbers, and the changelog are generated from them automatically.

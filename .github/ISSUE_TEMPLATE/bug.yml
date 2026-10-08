@@ -1,0 +1,29 @@
+name: Bug report
+description: Something in MultiClaude isn't working.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open MultiClaude
+        2. Click …
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: MultiClaude version, Claude Desktop version, and macOS version.
+      placeholder: MultiClaude 0.1.0, Claude 1.x, macOS 26
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Screenshots or log excerpts. Leave out account IDs, emails, and tokens.
