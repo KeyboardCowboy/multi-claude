@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Packaged app (npm run package)
+dist/
+
+# Intermediate files from npm run icon (build/icon.icns and build/icon.png are kept)
+build/icon.iconset/
+
+# Logs
+npm-debug.log*
+*.log
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local Claude Code settings
+.claude/settings.local.json

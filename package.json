@@ -1,0 +1,18 @@
+{
+  "name": "multiclaude",
+  "productName": "MultiClaude",
+  "version": "0.1.0",
+  "description": "Launch isolated Claude Desktop instances, one per account, on macOS.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "package": "electron-packager . \"MultiClaude\" --platform=darwin --arch=arm64 --icon=build/icon.icns --out=dist --overwrite --ignore=\"^/dist|^/test|^/build\"",
+    "icon": "sh build/make-icon.sh"
+  },
+  "devDependencies": {
+    "@electron/packager": "latest",
+    "electron": "latest"
+  }
+}

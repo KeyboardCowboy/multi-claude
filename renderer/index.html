@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src data:; style-src 'self'; script-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiClaude</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="titlebar"><h1>MultiClaude</h1></header>
+
+  <main>
+    <div id="banner" class="banner" role="alert" hidden></div>
+    <ul id="grid" class="grid"></ul>
+    <p class="tip">
+      Signing in or connecting a service? Open the <strong>⋯</strong> menu on a profile and choose
+      <strong>Sign in or connect…</strong>. The app closes your other Claude instances first, so the
+      browser hands you back to the right one.
+    </p>
+  </main>
+
+  <footer>
+    <span class="path">Claude app: <span id="appPath"></span></span>
+    <button id="changeApp" class="link" type="button">Change…</button>
+  </footer>
+
+  <!-- Add / edit a profile -->
+  <dialog id="editDialog" aria-labelledby="editTitle">
+    <form id="editForm" class="dlg" novalidate>
+      <h2 id="editTitle">Add profile</h2>
+
+      <div class="field">
+        <label for="nameInput">Name</label>
+        <input id="nameInput" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Work Claude">
+      </div>
+
+      <fieldset class="field">
+        <legend>Color</legend>
+        <div id="swatches" class="swatches"></div>
+      </fieldset>
+
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="useDefault">
+          <span>Use Claude’s default folder (keeps the account you’re signed into now)</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="dirInput">Data folder</label>
+        <div class="row">
+          <input id="dirInput" autocomplete="off" spellcheck="false" placeholder="/Users/you/.claude-instances/work">
+          <button id="chooseDir" class="btn" type="button">Choose…</button>
+        </div>
+        <p class="hint">Sign-in and settings for this account are stored here. Each extra account needs its own folder.</p>
+      </div>
+
+      <p id="editError" class="error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button id="editCancel" class="btn" type="button">Cancel</button>
+        <button id="editSave" class="btn primary" type="submit">Save profile</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Remove a profile -->
+  <dialog id="removeDialog" aria-labelledby="removeTitle">
+    <div class="dlg">
+      <h2 id="removeTitle">Remove profile</h2>
+      <p id="removeText"></p>
+      <div class="field" id="trashField">
+        <label class="check">
+          <input type="checkbox" id="trashData">
+          <span>Also move its data folder to the Trash</span>
+        </label>
+        <p class="hint" id="trashHint"></p>
+      </div>
+      <p id="removeError" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="removeCancel" class="btn" type="button">Cancel</button>
+        <button id="removeConfirm" class="btn danger" type="button">Remove profile</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Sign in or connect -->
+  <dialog id="wizardDialog" aria-labelledby="wizardTitle">
+    <div class="dlg">
+      <h2 id="wizardTitle">Sign in or connect</h2>
+      <p id="wizardSub" class="sub"></p>
+      <ol id="steps" class="steps"></ol>
+      <p id="wizardError" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="wizardClose" class="btn" type="button">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
