@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const os = require('node:os');
 const path = require('node:path');
-const { DEFAULT_KEY, dirKey, slugify, parseInstances } = require('../lib/instances');
+const { DEFAULT_KEY, dirKey, slugify, uniqueProfileDir, parseInstances } = require('../lib/instances');
 
 const APP = '/Applications/Claude.app';
 const EXE = `${APP}/Contents/MacOS/Claude`;
@@ -51,4 +51,13 @@ test('dirKey expands ~ and treats null as the default', () => {
 test('slugify makes safe folder names', () => {
   assert.strictEqual(slugify('Work Claude!'), 'work-claude');
   assert.strictEqual(slugify('   '), 'profile');
+});
+
+test('uniqueProfileDir skips folders in use or left on disk', () => {
+  const root = '/Users/me/Library/Application Support/MultiClaude/Profiles';
+  const none = () => false;
+  assert.strictEqual(uniqueProfileDir(root, 'Work Claude', new Set(), none), `${root}/work-claude`);
+  const taken = new Set([`${root}/work-claude`]);
+  const onDisk = (p) => p === `${root}/work-claude-2`;
+  assert.strictEqual(uniqueProfileDir(root, 'Work Claude', taken, onDisk), `${root}/work-claude-3`);
 });

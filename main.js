@@ -7,14 +7,17 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
-const { normalizeDir, dirKey, slugify, parseInstances } = require('./lib/instances');
+const { normalizeDir, dirKey, uniqueProfileDir, parseInstances } = require('./lib/instances');
+const { accountIdFromConfig, bindNewAccounts, accountStates, normalizeEmail } = require('./lib/accounts');
 
 app.setName('MultiClaude');
 
 const DEFAULT_APP_PATH = '/Applications/Claude.app';
 const CLAUDE_DEFAULT_DATA = path.join(os.homedir(), 'Library', 'Application Support', 'Claude');
 const CLAUDE_CODE_DIR = path.join(os.homedir(), '.claude');
-const INSTANCES_ROOT = path.join(os.homedir(), '.claude-instances');
+// Where new profiles get their data folders automatically. Older profiles may live elsewhere
+// (e.g. ~/.claude-instances); their saved paths are kept as they are.
+const PROFILES_ROOT = path.join(app.getPath('userData'), 'Profiles');
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -58,9 +61,44 @@ async function loadState() {
     await saveState();
   }
   if (!state.claudeAppPath) state.claudeAppPath = DEFAULT_APP_PATH;
+  // Account ID → { email }, labels the user gives each Claude account once.
+  if (!state.accounts || typeof state.accounts !== 'object') state.accounts = {};
 }
 
 const findProfile = (id) => state.profiles.find((p) => p.id === id);
+
+// ---------------------------------------------------------------- accounts
+
+// The account each profile's data folder is signed into right now: Map of profile id → ID or null.
+function currentAccounts() {
+  const current = new Map();
+  for (const p of state.profiles) {
+    let id = null;
+    try {
+      id = accountIdFromConfig(fs.readFileSync(path.join(p.dir || CLAUDE_DEFAULT_DATA, 'config.json'), 'utf8'));
+    } catch {
+      /* not signed in yet, or the folder doesn't exist yet */
+    }
+    current.set(p.id, id);
+  }
+  return current;
+}
+
+// Current account states, remembering first sign-ins as each profile's own account.
+async function refreshAccounts() {
+  const current = currentAccounts();
+  if (bindNewAccounts(state.profiles, current)) await saveState();
+  return accountStates(state.profiles, current);
+}
+
+const accountEmail = (id) => (state.accounts[id] && state.accounts[id].email) || null;
+
+// A fresh folder for a new profile under PROFILES_ROOT, named after it. Skips folders other
+// profiles use and any left on disk, so a new profile never inherits an old sign-in.
+function autoDir(name) {
+  const taken = new Set(state.profiles.filter((p) => p.dir).map((p) => dirKey(p.dir)));
+  return uniqueProfileDir(PROFILES_ROOT, name, taken, fs.existsSync);
+}
 
 // ---------------------------------------------------------------- system helpers
 
@@ -176,8 +214,10 @@ function validateProfile(input, existingId) {
     return { value: { name, color, dir: null } };
   }
 
+  // A blank folder keeps the profile's current one, or creates one for a new profile.
   const raw = String(input.dir || '').trim();
-  if (!raw) return { error: 'Choose a data folder.' };
+  const existing = existingId ? findProfile(existingId) : null;
+  if (!raw) return { value: { name, color, dir: existing && existing.dir ? existing.dir : autoDir(name) } };
   const dir = normalizeDir(raw);
   if (path.dirname(dir) === dir || dir === os.homedir()) {
     return { error: 'Choose a dedicated folder, not your home folder or the disk root.' };
@@ -199,11 +239,33 @@ function validateProfile(input, existingId) {
 ipcMain.handle('state:get', async () => {
   const running = await scanInstances();
   const keys = new Set(running.map((i) => i.key));
+  const accounts = await refreshAccounts();
   return {
     claudeAppPath: state.claudeAppPath,
     appFound: appFound(),
-    profiles: state.profiles.map((p) => ({ ...p, running: keys.has(dirKey(p.dir)) })),
+    accounts: state.accounts,
+    profiles: state.profiles.map((p) => ({ ...p, running: keys.has(dirKey(p.dir)), account: accounts.get(p.id) })),
   };
+});
+
+ipcMain.handle('account:label', async (_e, accountId, email) => {
+  const known = [...currentAccounts().values()].includes(accountId) || state.profiles.some((p) => p.accountId === accountId);
+  if (!known) return { ok: false, error: 'That account isn’t signed into any profile.' };
+  const value = normalizeEmail(email);
+  if (!value) return { ok: false, error: 'Enter the account’s email address, like you@example.com.' };
+  state.accounts[accountId] = { email: value };
+  await saveState();
+  return { ok: true };
+});
+
+// "Keep it": the profile now uses whichever account its folder is signed into.
+ipcMain.handle('account:accept', async (_e, profileId) => {
+  const p = findProfile(profileId);
+  const id = p && currentAccounts().get(p.id);
+  if (!id) return { ok: false, error: 'No account is signed in for that profile yet.' };
+  p.accountId = id;
+  await saveState();
+  return { ok: true };
 });
 
 ipcMain.handle('icon:get', () => claudeIcon());
@@ -212,7 +274,11 @@ ipcMain.handle('profile:save', async (_e, input) => {
   const existing = input.id ? findProfile(input.id) : null;
   const { value, error } = validateProfile(input, existing ? existing.id : null);
   if (error) return { ok: false, error };
-  if (existing) Object.assign(existing, value);
+  if (existing) {
+    // A different folder means a different sign-in, so forget the remembered account.
+    if (dirKey(existing.dir) !== dirKey(value.dir)) delete existing.accountId;
+    Object.assign(existing, value);
+  }
   else state.profiles.push({ id: crypto.randomUUID(), ...value });
   await saveState();
   return { ok: true };
@@ -243,11 +309,26 @@ ipcMain.handle('profile:launch', async (_e, id) => {
   if (!appFound()) {
     return { ok: false, error: `Claude isn’t at ${state.claudeAppPath}. Choose its location first.` };
   }
+  // One account open in two instances would have both writing the same account's local
+  // sessions and running its scheduled tasks twice, so refuse while the other is open.
+  const accounts = await refreshAccounts();
+  const { current, sharedWith } = accounts.get(p.id);
+  if (current && sharedWith.length) {
+    const runningKeys = new Set((await scanInstances()).map((i) => i.key));
+    if (!runningKeys.has(dirKey(p.dir))) {
+      const open = state.profiles.find((o) => sharedWith.includes(o.id) && runningKeys.has(dirKey(o.dir)));
+      if (open) {
+        const who = accountEmail(current) || 'The same Claude account';
+        return { ok: false, error: `${who} is already open in ${open.name}. Quit it first, or sign ${p.name} into a different account.` };
+      }
+    }
+  }
   // -n always starts a fresh process. If this profile is already running, Chromium's
   // single-instance lock (keyed on the data folder) hands off to it and exits.
   const args = ['-n', '-a', state.claudeAppPath];
   if (p.dir) args.push('--args', `--user-data-dir=${p.dir}`);
   try {
+    if (p.dir) await fsp.mkdir(p.dir, { recursive: true });
     await run('/usr/bin/open', args);
     return { ok: true };
   } catch (e) {
@@ -281,18 +362,10 @@ ipcMain.handle('dir:choose', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const res = await dialog.showOpenDialog(win, {
     title: 'Choose a data folder',
-    defaultPath: fs.existsSync(INSTANCES_ROOT) ? INSTANCES_ROOT : os.homedir(),
+    defaultPath: fs.existsSync(PROFILES_ROOT) ? PROFILES_ROOT : os.homedir(),
     properties: ['openDirectory', 'createDirectory'],
   });
   return res.canceled ? null : res.filePaths[0];
-});
-
-ipcMain.handle('dir:suggest', (_e, name) => {
-  const base = path.join(INSTANCES_ROOT, slugify(name));
-  const taken = new Set(state.profiles.filter((p) => p.dir).map((p) => dirKey(p.dir)));
-  let candidate = base;
-  for (let n = 2; taken.has(candidate); n++) candidate = `${base}-${n}`;
-  return candidate;
 });
 
 // ---------------------------------------------------------------- window
@@ -300,7 +373,7 @@ ipcMain.handle('dir:suggest', (_e, name) => {
 function createWindow() {
   const win = new BrowserWindow({
     width: 780,
-    height: 580,
+    height: 680,
     minWidth: 560,
     minHeight: 460,
     titleBarStyle: 'hiddenInset',

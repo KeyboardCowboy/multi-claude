@@ -28,9 +28,11 @@ The app icon is drawn in `build/icon.svg`. After changing it, run `npm run icon`
 
 - **Click a profile** to open that Claude instance. If it's already running, you're taken to it instead of getting a duplicate.
 - **Green dot and "Running"** show which profiles are open. The list refreshes every few seconds.
-- **Add profile** (the + tile) asks for a name, a color, and a data folder. The folder is suggested for you under `~/.claude-instances/`.
+- **Add profile** (the + tile) asks for a name and a color. MultiClaude creates the profile's data folder for you in `~/Library/Application Support/MultiClaude/Profiles/`. To pick a folder yourself, open **Data folder** in the same dialog.
 - **Personal Claude** is created for you using Claude's default folder, so whatever account you're signed into now stays signed in. Only one profile can use the default folder.
-- **⋯ menu** on each profile: Sign in or connect…, Edit…, Remove…
+- **Account email** under each profile shows which Claude account is signed into it. Claude stores only an account ID on your Mac, so the first time MultiClaude sees a new account it asks for the email once (**Add account email**). After that, the ID keeps the label accurate.
+- **Account warnings**: if a profile ends up signed into a different account than usual (for example, someone logged out and into another account inside Claude), its account line turns red. Click it to switch back, keep the new account, or remove a duplicate profile. MultiClaude won't open the same account in two profiles at once, since both would write that account's local sessions and run its scheduled tasks twice.
+- **⋯ menu** on each profile: Sign in or connect…, Add/Change account email…, Edit…, Remove…
 
 ### Sign in or connect…
 
@@ -49,7 +51,39 @@ You only need it for the first sign-in on each profile and when you add connecto
 - Running status: reads `ps` and matches each Claude main process by its `--user-data-dir`.
 - Quitting others: sends a normal quit signal (SIGTERM) to those processes, and only offers a force quit if they don't exit.
 - Icon: read from your installed Claude.app at runtime. Nothing from Claude is bundled in this app.
-- Settings are stored in `~/Library/Application Support/MultiClaude/profiles.json`.
+- Settings are stored in `~/Library/Application Support/MultiClaude/profiles.json`, and new profiles' data folders in `~/Library/Application Support/MultiClaude/Profiles/`. Profiles created before this keep their existing folders.
+
+## Why separate folders are needed
+
+Claude Desktop already signs in and out of several accounts, so why not just do that? Because a single install keeps only some things apart by account. Looking inside its data folder (`~/Library/Application Support/Claude`) shows the split. This is observed behavior, not documented by Anthropic, so it can change between versions.
+
+```
+~/Library/Application Support/Claude/
+│
+│  ── Shared by every account (one copy) ──
+├── config.json                  sign-in token (encrypted), last signed-in account, app prefs
+├── Cookies                      claude.ai login cookie, one account's at a time
+├── Local Storage/, IndexedDB/   claude.ai web app's local cache
+├── claude_desktop_config.json   local MCP servers
+├── Claude Extensions/           installed desktop extensions
+├── window-state.json, Preferences, caches…
+│
+│  ── Filed by account, then organization ──
+├── claude-code-sessions/<account-id>/<org-id>/        Claude Code sessions, scheduled tasks
+├── local-agent-mode-sessions/<account-id>/<org-id>/   Cowork sessions
+├── space-memory-copy/<account-id>/<org-id>/
+├── spaces-present/<account-id>/<org-id>/
+└── Partitions/cowork-artifact-<account-id>-<org-id>/  storage for artifact views
+```
+
+What that means when you sign out of one account and into another in a single install:
+
+- **Kept apart:** local Claude Code and Cowork sessions, their memory, and artifact storage. They reappear when you sign back in.
+- **Swapped:** the sign-in itself. There is one token and one cookie jar, so only one account can be signed in at a time.
+- **Shared:** local MCP servers, installed extensions, window state, and preferences. Every account sees the same set.
+- **Not here at all:** chats and projects live on Anthropic's servers, per account. Claude Code's `~/.claude` folder is shared by all accounts.
+
+MultiClaude gives each profile its own complete copy of this folder, so each one has its own sign-in, MCP servers, and extensions, and they can all run at the same time. `~/.claude` is the one piece still shared (see below).
 
 ## Known limits
 

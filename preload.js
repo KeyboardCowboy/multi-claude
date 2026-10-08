@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld('multiclaude', {
   quitOthers: (id, force) => call('signin:quit-others', id, force),
   chooseClaudeApp: () => call('app:choose'),
   chooseDir: () => call('dir:choose'),
-  suggestDir: (name) => call('dir:suggest', name),
+  labelAccount: (accountId, email) => call('account:label', accountId, email),
+  acceptAccount: (profileId) => call('account:accept', profileId),
 });

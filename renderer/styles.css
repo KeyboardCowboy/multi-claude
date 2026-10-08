@@ -86,15 +86,18 @@ button {
 
 .titlebar {
   flex: none;
-  height: 52px;
+  height: 40px;
   display: flex;
   align-items: center;
   padding: 0 24px 0 92px;
   -webkit-app-region: drag;
 }
-.titlebar h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 
-main { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+main { flex: 1; overflow-y: auto; padding-bottom: 24px; }
+
+.hero { padding: 0 32px 18px; }
+.hero h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.subtitle { margin: 2px 0 0; font-size: 14px; color: var(--muted); }
 
 footer {
   flex: none;
@@ -133,7 +136,7 @@ footer .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; u
   gap: 28px 8px;
 }
 
-.tile { position: relative; display: flex; justify-content: center; }
+.tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 
 .launch {
   width: 100%;
@@ -141,7 +144,7 @@ footer .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; u
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 14px 10px 10px;
+  padding: 14px 10px 8px;
   border-radius: 16px;
 }
 .launch:hover { background: var(--hover); }
@@ -202,6 +205,25 @@ footer .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; u
   white-space: nowrap;
 }
 
+/* The account line under a profile's name: its email, or a prompt to name or check it. */
+.account {
+  max-width: 100%;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  /* Up to two lines, so warnings keep the email and profile names readable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+button.account { border-radius: 6px; text-decoration: underline; text-underline-offset: 2px; }
+button.account:hover { color: var(--ink); background: var(--hover); }
+.account.warn { color: var(--danger); font-weight: 600; }
+
 .status {
   min-height: 17px;
   display: flex;
@@ -256,15 +278,22 @@ footer .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; u
 .menu-item:hover { background: var(--hover); }
 .menu-item.danger { color: var(--danger); }
 
-.tip {
-  max-width: 62ch;
-  margin: 30px 32px 0;
+/* Two columns of guidance under the grid; stacks when the window is narrow. */
+.info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 40px;
+  margin: 32px 32px 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
   font-size: 13px;
   line-height: 1.55;
   color: var(--muted);
   user-select: text;
 }
-.tip strong { color: var(--ink); font-weight: 600; }
+.info h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: var(--ink); }
+.info p { margin: 0 0 10px; }
+.info strong { color: var(--ink); font-weight: 600; }
 
 /* ---- dialogs ---- */
 
@@ -302,6 +331,11 @@ input:disabled { opacity: 0.5; }
 .row { display: flex; gap: 8px; }
 .hint { margin: 6px 0 0 !important; font-size: 12px; color: var(--muted); }
 
+/* Collapsible "Data folder" options in the profile dialog. */
+.advanced summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.advanced .summary-value { margin-left: 4px; font-weight: 400; color: var(--muted); }
+.advanced-body { display: grid; gap: 12px; margin-top: 10px; }
+
 .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400 !important; }
 .check input { margin: 3px 0 0; flex: none; }
 
@@ -320,6 +354,7 @@ input:focus-visible + .swatch { outline: 3px solid var(--focus); outline-offset:
 .error { padding: 8px 10px; border-radius: 8px; background: var(--danger-bg); color: var(--danger); font-size: 13px; }
 
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.actions.stacked { flex-direction: column-reverse; align-items: stretch; }
 
 .btn {
   padding: 7px 14px;

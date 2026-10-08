@@ -44,7 +44,7 @@ function initialOf(name) {
 
 // ------------------------------------------------------------------ state
 
-let state = { profiles: [], appFound: true, claudeAppPath: '' };
+let state = { profiles: [], accounts: {}, appFound: true, claudeAppPath: '' };
 let iconUrl = null;
 let iconFor = null;
 let structureKey = '';
@@ -61,6 +61,7 @@ async function refresh({ force = false } = {}) {
     state.appFound,
     state.claudeAppPath,
   ]);
+  if (wizard && $('#wizardDialog').open && $('#wizardAccount')) $('#wizardAccount').textContent = wizardAccountText();
   if (force || key !== structureKey) {
     structureKey = key;
     render();
@@ -102,7 +103,6 @@ function tile(p) {
     { class: 'launch', type: 'button', onClick: () => launchProfile(p) },
     plate,
     el('span', { class: 'name', text: p.name }),
-    el('span', { class: 'status', 'data-role': 'status' }),
   );
 
   const more = el('button', {
@@ -115,7 +115,14 @@ function tile(p) {
     onClick: (e) => toggleMenu(e, p, li, more),
   });
 
-  const li = el('li', { class: 'tile', 'data-id': p.id, vars: { '--c': p.color } }, launch, more);
+  const li = el(
+    'li',
+    { class: 'tile', 'data-id': p.id, vars: { '--c': p.color } },
+    launch,
+    accountLine(p),
+    el('span', { class: 'status', 'data-role': 'status' }),
+    more,
+  );
   return li;
 }
 
@@ -128,9 +135,90 @@ function addTile() {
       { class: 'launch', type: 'button', onClick: () => openEdit(null) },
       el('span', { class: 'plate add', 'aria-hidden': 'true', text: '+' }),
       el('span', { class: 'name', text: 'Add profile' }),
-      el('span', { class: 'status' }),
     ),
   );
+}
+
+// ------------------------------------------------------------------ accounts
+
+const emailFor = (id) => (id && state.accounts[id] ? state.accounts[id].email : null);
+
+// The line under a tile's name: the account's email, or a prompt to name or check it.
+function accountLine(p) {
+  const a = p.account || { kind: 'none', sharedWith: [] };
+  const email = emailFor(a.current);
+  if (a.kind === 'mismatch') {
+    const text = `Signed into ${email || 'another account'}`;
+    return el('button', { class: 'account warn', type: 'button', text, onClick: () => openAccountCheck(p) });
+  }
+  if (a.sharedWith.length) {
+    const other = state.profiles.find((o) => o.id === a.sharedWith[0]);
+    const text = `Same account as ${other.name}`;
+    return el('button', { class: 'account link', type: 'button', text, title: email || '', onClick: () => openAccountCheck(p) });
+  }
+  if (a.kind === 'none') return el('span', { class: 'account', text: 'Not signed in yet' });
+  if (email) return el('span', { class: 'account', text: email, title: email });
+  return el('button', { class: 'account link', type: 'button', text: 'Add account email', onClick: () => openAccountName(p) });
+}
+
+let naming = null;
+
+function openAccountName(p) {
+  naming = { accountId: p.account.current };
+  const email = emailFor(naming.accountId);
+  $('#accountTitle').textContent = email ? 'Change account email' : 'Which account is this?';
+  $('#accountText').textContent = `Enter the email of the Claude account signed into ${p.name}.`;
+  $('#emailInput').value = email || '';
+  showError('#accountError', '');
+  $('#accountDialog').showModal();
+  $('#emailInput').focus();
+}
+
+$('#accountCancel').addEventListener('click', () => $('#accountDialog').close());
+$('#accountForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await api.labelAccount(naming.accountId, $('#emailInput').value);
+  if (!r.ok) return showError('#accountError', r.error);
+  $('#accountDialog').close();
+  refresh({ force: true });
+});
+
+// Explains an unexpected or shared account and offers the ways to resolve it.
+function openAccountCheck(p) {
+  const a = p.account;
+  const current = emailFor(a.current);
+  const usual = emailFor(a.expected) || 'its usual account';
+  const others = state.profiles.filter((o) => a.sharedWith.includes(o.id));
+  const close = () => $('#checkDialog').close();
+  const button = (text, onClick, cls = '') => el('button', { class: `btn ${cls}`.trim(), type: 'button', text, onClick });
+
+  const paras = [];
+  if (a.kind === 'mismatch') {
+    paras.push(`${p.name} is signed into ${current || 'an account you haven’t named yet'} instead of ${usual}. This happens when someone logs out and into another account inside Claude.`);
+  }
+  if (others.length) {
+    const names = others.map((o) => o.name).join(' and ');
+    paras.push(`${names} ${others.length > 1 ? 'are' : 'is'} signed into the same account, so only one of them can be open at a time. Opening the same account twice would have both writing its local sessions and running its scheduled tasks twice.`);
+  }
+
+  const actions = [];
+  actions.push(button('Not now', close));
+  for (const o of others) actions.push(button(`Remove ${o.name}…`, () => (close(), openRemove(o))));
+  if (a.kind === 'mismatch') {
+    actions.push(button(current ? `Keep ${current}` : 'Keep this account', async () => {
+      const r = await api.acceptAccount(p.id);
+      if (!r.ok) return showError('#checkError', r.error);
+      close();
+      refresh({ force: true });
+    }));
+  }
+  const switchLabel = a.kind === 'mismatch' ? `Switch back to ${usual}` : 'Sign in with a different account';
+  actions.push(button(switchLabel, () => (close(), openWizard(p, { switchAccount: true })), 'primary'));
+
+  $('#checkBody').replaceChildren(...paras.map((t) => el('p', { text: t })));
+  $('#checkActions').replaceChildren(...actions);
+  showError('#checkError', '');
+  $('#checkDialog').showModal();
 }
 
 // ------------------------------------------------------------------ status
@@ -227,6 +315,7 @@ function toggleMenu(event, p, li, button) {
     'div',
     { class: 'menu', role: 'menu' },
     item('Sign in or connect…', () => openWizard(p)),
+    p.account && p.account.current ? item(emailFor(p.account.current) ? 'Change account email…' : 'Add account email…', () => openAccountName(p)) : null,
     item('Edit…', () => openEdit(p)),
     item('Remove…', () => openRemove(p), 'danger'),
   );
@@ -283,7 +372,7 @@ function showError(id, message) {
 
 // ------------------------------------------------------------------ add / edit
 
-const edit = { id: null, color: SWATCHES[0][1], dirEdited: false };
+const edit = { id: null, color: SWATCHES[0][1] };
 
 function renderSwatches() {
   const box = $('#swatches');
@@ -309,13 +398,19 @@ function renderSwatches() {
 
 function syncFolderControls() {
   const useDefault = $('#useDefault').checked;
+  const dir = $('#dirInput').value.trim();
   $('#dirInput').disabled = useDefault;
   $('#chooseDir').disabled = useDefault;
+  $('#folderSummary').textContent = useDefault ? 'Claude’s default' : dir ? shortPath(dir) : 'Automatic';
+}
+
+// "/Users/me/Library/…/work" → "~/Library/…/work", for the folder summary line.
+function shortPath(dir) {
+  return dir.replace(/^\/Users\/[^/]+/, '~');
 }
 
 function openEdit(p) {
   edit.id = p ? p.id : null;
-  edit.dirEdited = !!(p && p.dir);
   const used = new Set(state.profiles.map((x) => x.color));
   edit.color = p ? p.color : (SWATCHES.find(([, hex]) => !used.has(hex)) || SWATCHES[0])[1];
 
@@ -327,25 +422,19 @@ function openEdit(p) {
   $('#useDefault').disabled = defaultTaken;
   renderSwatches();
   syncFolderControls();
+  $('#folderOptions').open = false;
   showError('#editError', '');
   $('#editDialog').showModal();
   $('#nameInput').focus();
 }
 
-$('#nameInput').addEventListener('input', async () => {
-  if (edit.dirEdited || $('#useDefault').checked) return;
-  const name = $('#nameInput').value.trim();
-  $('#dirInput').value = name ? await api.suggestDir(name) : '';
-});
-$('#dirInput').addEventListener('input', () => {
-  edit.dirEdited = true;
-});
+$('#dirInput').addEventListener('input', syncFolderControls);
 $('#useDefault').addEventListener('change', syncFolderControls);
 $('#chooseDir').addEventListener('click', async () => {
   const dir = await api.chooseDir();
   if (dir) {
     $('#dirInput').value = dir;
-    edit.dirEdited = true;
+    syncFolderControls();
   }
 });
 $('#editCancel').addEventListener('click', () => $('#editDialog').close());
@@ -396,10 +485,13 @@ $('#removeConfirm').addEventListener('click', async () => {
 
 let wizard = null;
 
-async function openWizard(p) {
+// opts.switchAccount: the profile is signed into the wrong account; walk through logging out
+// and back in with the right one.
+async function openWizard(p, opts = {}) {
   const others = await api.othersRunning(p.id);
   wizard = {
     profile: p,
+    switchAccount: !!opts.switchAccount,
     step: others.length ? 0 : 1,
     others,
     remaining: [],
@@ -408,6 +500,7 @@ async function openWizard(p) {
     browserReady: false,
     summaries: others.length ? {} : { 0: 'No other Claude instances were running.' },
   };
+  $('#wizardTitle').textContent = wizard.switchAccount ? 'Switch account' : 'Sign in or connect';
   $('#wizardSub').textContent = p.name;
   showError('#wizardError', '');
   renderWizard();
@@ -462,9 +555,18 @@ async function reopenClosed() {
   setTimeout(refresh, 2000);
 }
 
+// "Signed in now: …" in the wizard's last step, kept current by refresh().
+function wizardAccountText() {
+  const p = state.profiles.find((x) => x.id === wizard.profile.id);
+  const id = p && p.account ? p.account.current : null;
+  if (!id) return 'Signed in now: nobody yet';
+  return `Signed in now: ${emailFor(id) || 'an account you haven’t named yet'}`;
+}
+
 function renderWizard() {
   const w = wizard;
   const name = w.profile.name;
+  const target = w.switchAccount ? emailFor(w.profile.account && w.profile.account.expected) : null;
   const btn = (label, onClick, cls = 'primary', disabled = false) =>
     el('button', { class: `btn ${cls}`, type: 'button', onClick, text: label, disabled: disabled || w.busy });
 
@@ -483,7 +585,7 @@ function renderWizard() {
     {
       title: 'Check your browser',
       body: () => [
-        el('p', { text: `Sign-in and service connections finish in your default browser. Make sure it is signed in to the Claude account you want for “${name}”, or sign out there first.` }),
+        el('p', { text: `Sign-in and service connections finish in your default browser. Make sure it is signed in to ${target || `the Claude account you want for “${name}”`}, or sign out there first.` }),
         el(
           'label',
           { class: 'check' },
@@ -511,7 +613,12 @@ function renderWizard() {
     {
       title: 'Finish in the app',
       body: () => [
-        el('p', { text: 'Click Sign in (or Connect on a service), finish in the browser, and approve the prompt to return to Claude. Then check that the app shows the account you expect.' }),
+        el('p', {
+          text: w.switchAccount
+            ? `In Claude, open the account menu and log out. Then sign in with ${target || 'the account you want'}, finish in the browser, and approve the prompt to return to Claude.`
+            : 'Click Sign in (or Connect on a service), finish in the browser, and approve the prompt to return to Claude. Then check that the app shows the account you expect.',
+        }),
+        el('p', { id: 'wizardAccount', class: 'hint', text: wizardAccountText() }),
         el(
           'div',
           { class: 'actions' },
